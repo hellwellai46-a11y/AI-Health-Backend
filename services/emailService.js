@@ -1,26 +1,70 @@
 import nodemailer from "nodemailer";
 import "dotenv/config";
 
-// Create reusable transporter object using SMTP transport
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: process.env.SMTP_SECURE === "true", // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER || process.env.EMAIL_USER,
-    pass: process.env.SMTP_PASS || process.env.EMAIL_PASSWORD,
-  },
-});
+// Check if email is configured
+const isEmailConfigured = () => {
+  return !!(process.env.SMTP_USER || process.env.EMAIL_USER) && 
+         !!(process.env.SMTP_PASS || process.env.EMAIL_PASSWORD);
+};
 
-// Verify transporter configuration
-transporter.verify(function (error, success) {
-  if (error) {
-    console.error("❌ Email service configuration error:", error);
-    console.warn("⚠️  Email notifications will not be sent. Please configure SMTP settings in .env");
-  } else {
-    console.log("✅ Email service is ready to send messages");
+// Create reusable transporter object using SMTP transport
+// Only create transporter if email is configured
+const createTransporter = () => {
+  if (!isEmailConfigured()) {
+    return null;
   }
-});
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_SECURE === "true", // true for 465, false for other ports
+    auth: {
+      user: process.env.SMTP_USER || process.env.EMAIL_USER,
+      pass: process.env.SMTP_PASS || process.env.EMAIL_PASSWORD,
+    },
+    // Add connection timeout to prevent hanging
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+  });
+
+  return transporter;
+};
+
+const transporter = createTransporter();
+
+// Email verification status
+let emailVerified = false;
+let emailVerificationAttempted = false;
+
+// Skip verification on startup to prevent blocking
+// Verification will be done lazily when first email is sent
+if (transporter) {
+  console.log("📧 Email service configured. Verification will be done on first email send.");
+  console.log(`📧 SMTP Host: ${process.env.SMTP_HOST || "smtp.gmail.com"}`);
+} else {
+  console.log("ℹ️  Email service not configured. Email notifications will be disabled.");
+  console.log("ℹ️  To enable email, set SMTP_USER and SMTP_PASS in environment variables.");
+}
+
+// Optional: Verify email in background (completely non-blocking and non-critical)
+if (transporter && process.env.NODE_ENV === 'development') {
+  // Only verify in development, and make it completely optional
+  setTimeout(() => {
+    if (!emailVerificationAttempted) {
+      emailVerificationAttempted = true;
+      transporter.verify(function (error, success) {
+        if (error) {
+          // Don't log as error, just as info
+          console.log("ℹ️  Email verification skipped (will verify on first send):", error.message);
+        } else {
+          emailVerified = true;
+          console.log("✅ Email service verified and ready");
+        }
+      });
+    }
+  }, 5000); // Delay 5 seconds to ensure server is fully started
+}
 
 /**
  * Send reminder email to user
@@ -32,7 +76,7 @@ transporter.verify(function (error, success) {
  */
 export const sendReminderEmail = async ({ to, userName, reminder }) => {
   // Check if email is configured
-  if (!process.env.SMTP_USER && !process.env.EMAIL_USER) {
+  if (!transporter || !isEmailConfigured()) {
     console.warn("⚠️  Email not configured. Skipping email send.");
     return { success: false, error: "Email service not configured" };
   }
@@ -41,6 +85,30 @@ export const sendReminderEmail = async ({ to, userName, reminder }) => {
   if (!to) {
     console.warn("⚠️  User email not found. Skipping email send.");
     return { success: false, error: "User email not found" };
+  }
+
+  // Lazy verification: Only verify when actually sending (with timeout)
+  if (!emailVerified && !emailVerificationAttempted) {
+    emailVerificationAttempted = true;
+    try {
+      // Verify with timeout
+      await Promise.race([
+        new Promise((resolve, reject) => {
+          transporter.verify((error, success) => {
+            if (error) reject(error);
+            else resolve(success);
+          });
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Verification timeout')), 5000)
+        )
+      ]);
+      emailVerified = true;
+      console.log("✅ Email service verified");
+    } catch (error) {
+      // Don't fail, just log and continue - will try to send anyway
+      console.log("ℹ️  Email verification skipped, will attempt to send:", error.message);
+    }
   }
 
   try {

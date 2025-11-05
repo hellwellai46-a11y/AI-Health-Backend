@@ -8,6 +8,9 @@ import "dotenv/config";
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MODEL_ID = "gemini-2.5-flash"; // or "gemini-2.5-pro"
 
+// Helper function to delay execution
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 function buildCombinedPrompt({ symptomsText, type, context, dietPreference }) {
   const dietNote = dietPreference 
     ? dietPreference === 'vegetarian' 
@@ -62,6 +65,9 @@ Additionally, if requested, generate a 7-day weeklyPlanner array with entries:
   }
 ]
 ${dietInstructions}
+
+CRITICAL: Ensure each day has DIFFERENT meals and exercises. Vary breakfast, lunch, dinner, and snacks across all 7 days. Only 1-2 items (maximum) should repeat across the week (like hydration message or basic supplement). Use different food combinations, recipes, and exercise types for each day to provide variety and prevent monotony.
+
 Keep language supportive and general (no diagnoses). Return strictly valid JSON with keys only for what is requested by 'type' (report | planner | both).
 Context (may help personalize): ${context}
 `.trim();
@@ -193,7 +199,7 @@ export const generateAnalysisController = async (req, res) => {
     const prompt = buildCombinedPrompt({ symptomsText, type, context, dietPreference: dietPreference || 'non-vegetarian' });
     const responseSchema = getResponseSchema({ wantReport, wantPlanner });
 
-    // Gemini call with strict JSON output
+    // Gemini call with strict JSON output and retry logic
     const model = genai.getGenerativeModel({
       model: MODEL_ID,
       generationConfig: {
@@ -204,15 +210,52 @@ export const generateAnalysisController = async (req, res) => {
       }
     });
 
-    const response = await model.generateContent(prompt);
-    const aiText = response?.response?.text?.();
-    if (!aiText) return res.status(502).json({ error: "Empty Gemini response" });
+    // Retry logic: 3 attempts
+    const MAX_RETRIES = 3;
+    let lastError = null;
+    let parsed = null;
+    let aiText = null;
+    
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`Attempting to get Gemini response for ${type} (Attempt ${attempt}/${MAX_RETRIES})`);
+        
+        const response = await model.generateContent(prompt);
+        aiText = response?.response?.text?.();
+        
+        if (!aiText || aiText.trim() === '') {
+          throw new Error("Empty response from AI");
+        }
 
-    let parsed;
-    try {
-      parsed = JSON.parse(aiText);
-    } catch {
-      return res.status(500).json({ error: "Gemini returned invalid JSON", raw: aiText });
+        // Try to parse the JSON
+        try {
+          parsed = JSON.parse(aiText);
+          console.log(`Successfully got and parsed ${type} from Gemini on attempt ${attempt}`);
+          break; // Success - exit retry loop
+        } catch (parseError) {
+          throw new Error(`Invalid JSON returned: ${parseError.message}`);
+        }
+
+      } catch (error) {
+        lastError = error;
+        console.error(`Attempt ${attempt} failed:`, error.message);
+        
+        // If this is not the last attempt, wait before retrying
+        if (attempt < MAX_RETRIES) {
+          const delay = attempt * 1000; // Exponential backoff: 1s, 2s
+          console.log(`Retrying in ${delay}ms...`);
+          await sleep(delay);
+        }
+      }
+    }
+
+    // Check if all retries failed
+    if (!parsed) {
+      console.error(`All ${MAX_RETRIES} attempts failed for ${type}. Last error:`, lastError.message);
+      return res.status(500).json({ 
+        error: "Failed to generate analysis. Please try again in a moment.",
+        details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}` 
+      });
     }
 
     // Persist report if requested
@@ -268,7 +311,11 @@ export const generateAnalysisController = async (req, res) => {
         days
       });
 
-      user.weeklyPlanners.push(savedPlanner._id);
+      // Add to user's dietPlans array (not weeklyPlanners)
+      if (!user.dietPlans) {
+        user.dietPlans = [];
+      }
+      user.dietPlans.push(savedPlanner._id);
       await user.save();
       result.weeklyPlanner = savedPlanner;
     }
@@ -283,5 +330,94 @@ export const generateAnalysisController = async (req, res) => {
     console.error("generateAnalysisController error:", error);
     const status = error.status || 500;
     return res.status(status).json({ error: "Server error", details: error.message });
+  }
+};
+
+// Get all weekly planners for a user
+export const getPlannersByUser = async (req, res) => {
+  try {
+    const userId = req.userId || req.params.userId; // Use from middleware or fallback to params
+
+    const planners = await WeeklyPlanner.find({ user: userId })
+      .sort({ createdAt: -1 }) // Most recent first
+      .populate('user', 'name email')
+      .lean();
+
+    // Transform the data to match frontend expectations
+    const transformedPlanners = planners.map((planner) => ({
+      _id: planner._id,
+      id: planner._id.toString(),
+      userId: planner.user?._id?.toString() || planner.user?.toString() || userId,
+      createdDate: planner.createdAt || planner.weekStart || new Date().toISOString(),
+      weekStart: planner.weekStart,
+      weekEnd: planner.weekEnd,
+      weekPlan: planner.days?.map((day) => ({
+        day: day.day || '',
+        date: day.date ? new Date(day.date).toISOString() : new Date().toISOString(),
+        diet: day.dietPlan || {},
+        exercises: Array.isArray(day.exercises) ? day.exercises : [],
+        medicines: Array.isArray(day.medicines) ? day.medicines : [],
+        notes: day.focusNote || '',
+        progress: day.progress || 0
+      })) || []
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: transformedPlanners.length,
+      data: transformedPlanners
+    });
+  } catch (error) {
+    console.error("Get planners by user error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get a single weekly planner by ID
+export const getPlannerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId; // From middleware
+
+    const planner = await WeeklyPlanner.findById(id)
+      .populate('user', 'name email')
+      .lean();
+
+    if (!planner) {
+      return res.status(404).json({ success: false, error: "Planner not found" });
+    }
+
+    // Check if planner belongs to user
+    const plannerUserId = planner.user?._id?.toString() || planner.user?.toString();
+    if (userId && plannerUserId !== userId) {
+      return res.status(403).json({ success: false, error: "Unauthorized access" });
+    }
+
+    // Transform the data
+    const transformedPlanner = {
+      _id: planner._id,
+      id: planner._id.toString(),
+      userId: plannerUserId || '',
+      createdDate: planner.createdAt || planner.weekStart || new Date().toISOString(),
+      weekStart: planner.weekStart,
+      weekEnd: planner.weekEnd,
+      weekPlan: planner.days?.map((day) => ({
+        day: day.day || '',
+        date: day.date ? new Date(day.date).toISOString() : new Date().toISOString(),
+        diet: day.dietPlan || {},
+        exercises: Array.isArray(day.exercises) ? day.exercises : [],
+        medicines: Array.isArray(day.medicines) ? day.medicines : [],
+        notes: day.focusNote || '',
+        progress: day.progress || 0
+      })) || []
+    };
+
+    res.status(200).json({
+      success: true,
+      data: transformedPlanner
+    });
+  } catch (error) {
+    console.error("Get planner by ID error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };

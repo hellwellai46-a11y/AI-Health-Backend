@@ -412,13 +412,18 @@ export const completeReminder = async (req, res) => {
       return res.status(404).json({ success: false, error: "Reminder not found" });
     }
 
+    // Mark as completed
     reminder.isCompleted = true;
     reminder.completedAt = new Date();
 
     // Calculate next reminder if recurring
     if (reminder.frequency !== 'once') {
       reminder.nextReminder = calculateNextReminder(reminder.scheduledTime, reminder.frequency, reminder.daysOfWeek);
-      reminder.isCompleted = false; // Reset for next occurrence
+      // Keep isCompleted = true until next reminder time arrives
+      // This allows tracking of completions properly
+    } else {
+      // For one-time reminders, mark as inactive after completion
+      reminder.isActive = false;
     }
 
     await reminder.save();

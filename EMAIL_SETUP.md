@@ -127,3 +127,4 @@ SMTP_PASS=your_password
 - If email fails, the reminder is still marked as sent in the database
 - Email failures are logged but don't stop the reminder system
 
+

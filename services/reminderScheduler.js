@@ -1,7 +1,13 @@
 import cron from "node-cron";
+import mongoose from "mongoose";
 import Reminder from "../models/Reminder.js";
 import User from "../models/user_model.js";
 import { sendReminderEmail } from "./emailService.js";
+
+// Check if MongoDB is connected
+function isDatabaseConnected() {
+  return mongoose.connection.readyState === 1;
+}
 
 // Send notification (email + console log)
 async function sendNotification(userId, reminder) {
@@ -59,6 +65,12 @@ async function sendNotification(userId, reminder) {
 // Check and send reminders every minute
 cron.schedule("* * * * *", async () => {
   try {
+    // Check if database is connected before querying
+    if (!isDatabaseConnected()) {
+      console.warn("⚠️  Database not connected, skipping reminder check");
+      return;
+    }
+
     const now = new Date();
     const oneMinuteFromNow = new Date(now.getTime() + 60000); // Check next 1 minute
 
@@ -87,6 +99,12 @@ cron.schedule("* * * * *", async () => {
         );
         reminder.nextReminder = nextReminder;
         reminder.lastReminded = new Date();
+        // Reset completion status when next reminder time is set (recurring reminder cycle)
+        // This allows tracking of each completion separately
+        if (reminder.isCompleted && reminder.completedAt) {
+          reminder.isCompleted = false;
+          reminder.completedAt = undefined;
+        }
         await reminder.save();
       } else {
         // One-time reminder, mark as inactive after sending

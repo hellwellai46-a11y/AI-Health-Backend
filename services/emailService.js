@@ -238,3 +238,4 @@ export const sendReminderEmail = async ({ to, userName, reminder }) => {
 
 export default transporter;
 
+

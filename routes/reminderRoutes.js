@@ -21,6 +21,8 @@ router.post("/from-planner", protect, createRemindersFromPlanner);
 // Create custom reminder
 router.post("/", protect, createReminder);
 
+//done
+
 // Get all reminders for user
 router.get("/user/:userId", protect, getUserReminders);
 

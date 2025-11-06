@@ -11,11 +11,80 @@ const MODEL_ID = "gemini-2.5-flash"; // or "gemini-2.5-pro"
 // Helper function to delay execution
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper function to check if a food item contains non-vegetarian ingredients
+const containsNonVegetarian = (foodItem) => {
+  if (!foodItem || typeof foodItem !== 'string') return false;
+  
+  const lowerFood = foodItem.toLowerCase();
+  
+  // List of non-vegetarian keywords
+  const nonVegKeywords = [
+    'chicken', 'beef', 'pork', 'lamb', 'mutton', 'goat', 'turkey', 'duck', 'quail',
+    'fish', 'salmon', 'tuna', 'cod', 'sardine', 'mackerel', 'prawn', 'shrimp', 'crab',
+    'lobster', 'seafood', 'meat', 'poultry', 'bacon', 'ham', 'sausage', 'pepperoni',
+    'gelatin', 'fish sauce', 'oyster sauce', 'anchovy', 'squid', 'octopus', 'mussel',
+    'clam', 'scallop', 'caviar', 'roe', 'stock', 'broth', 'bone broth', 'animal flesh'
+  ];
+  
+  return nonVegKeywords.some(keyword => lowerFood.includes(keyword));
+};
+
+// Helper function to filter non-vegetarian items from arrays
+const filterVegetarianItems = (items, isVegetarian) => {
+  if (!isVegetarian || !Array.isArray(items)) return items;
+  
+  return items.filter(item => {
+    if (typeof item === 'string') {
+      return !containsNonVegetarian(item);
+    }
+    return true;
+  });
+};
+
+// Helper function to filter non-vegetarian items from diet plan
+const filterVegetarianDietPlan = (dietPlan, isVegetarian) => {
+  if (!isVegetarian || !dietPlan || typeof dietPlan !== 'object') return dietPlan;
+  
+  const filtered = {};
+  for (const [key, value] of Object.entries(dietPlan)) {
+    if (typeof value === 'string') {
+      if (!containsNonVegetarian(value)) {
+        filtered[key] = value;
+      } else {
+        // Replace with a vegetarian alternative message
+        filtered[key] = 'Vegetarian meal (please specify based on your preferences)';
+      }
+    } else {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+};
+
 function buildCombinedPrompt({ symptomsText, type, context, dietPreference }) {
+  const isVegetarian = dietPreference === 'vegetarian';
+  
   const dietNote = dietPreference 
-    ? dietPreference === 'vegetarian' 
-      ? 'IMPORTANT: The user is VEGETARIAN. In foodsToEat and dietPlan, recommend ONLY vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins). Do NOT include any meat, fish, or poultry.'
-      : 'IMPORTANT: The user is NON-VEGETARIAN. In foodsToEat and dietPlan, you can recommend both vegetarian and non-vegetarian foods (meat, fish, poultry, as well as fruits, vegetables, grains, etc.).'
+    ? isVegetarian
+      ? `🚨 CRITICAL DIETARY RESTRICTION - STRICTLY ENFORCE: 
+The user is VEGETARIAN. This is a STRICT requirement that MUST be followed without exception.
+
+FOR foodsToEat field and dietPlan:
+- MUST ONLY recommend vegetarian foods
+- ALLOWED: fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins (tofu, tempeh, seitan)
+- ABSOLUTELY FORBIDDEN: meat (beef, pork, lamb, etc.), fish, seafood, poultry (chicken, turkey, duck), any animal flesh, gelatin, fish sauce, meat-based broths
+- DOUBLE-CHECK: Before adding any food item, verify it contains NO meat, fish, poultry, or seafood
+- If a food item could be ambiguous, choose a clearly vegetarian alternative
+
+This restriction applies to ALL food recommendations.`
+      : `DIETARY PREFERENCE:
+The user is NON-VEGETARIAN. 
+
+FOR foodsToEat field and dietPlan:
+- You CAN recommend BOTH vegetarian AND non-vegetarian foods
+- ALLOWED: All vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs) PLUS lean meats (chicken, fish, turkey), seafood, eggs, and other animal proteins
+- You have flexibility to include a mix of both types based on nutritional needs
+- Balance the recommendations with both plant-based and animal-based protein sources`
     : '';
 
   const reportPrompt = `
@@ -32,7 +101,9 @@ Provide:
 4. Prevention tips
 5. Medical remedies
 6. Yoga exercises
-7. Foods to eat ${dietPreference === 'vegetarian' ? '(ONLY vegetarian foods)' : '(can include both vegetarian and non-vegetarian options)'}
+7. Foods to eat ${isVegetarian 
+  ? '(STRICTLY ONLY vegetarian foods - NO meat, fish, poultry, or seafood allowed)' 
+  : '(can include both vegetarian and non-vegetarian options)'}
 8. Foods to avoid
 9. Health score (0-100)
 10. Brief summary
@@ -40,9 +111,29 @@ Provide:
 Format as valid JSON with these exact keys: symptoms, causes, deficiencies, prevention, remedies, yoga, foodsToEat, foodsToAvoid, healthScore, summary
 `.trim();
 
-  const dietInstructions = dietPreference === 'vegetarian'
-    ? 'IMPORTANT: User is VEGETARIAN. In dietPlan, provide ONLY vegetarian meals. Include: vegetables, fruits, grains, legumes, dairy, eggs, tofu, tempeh, nuts, seeds. EXCLUDE: meat, fish, poultry, seafood, any animal flesh.'
-    : 'IMPORTANT: User is NON-VEGETARIAN. In dietPlan, you can include both vegetarian and non-vegetarian options: lean meats (chicken, fish), eggs, dairy, vegetables, fruits, grains, legumes.';
+  const dietInstructions = isVegetarian
+    ? `🚨 CRITICAL DIETARY RESTRICTION FOR DIET PLAN - STRICTLY ENFORCE:
+The user is VEGETARIAN. This is a STRICT requirement that MUST be followed for ALL meals in the dietPlan.
+
+FOR EACH MEAL (breakfast, midMorningSnack, lunch, eveningSnack, dinner) in the dietPlan:
+- MUST ONLY provide vegetarian meals
+- ALLOWED INGREDIENTS: Vegetables (all types), Fruits (all types), Grains (rice, wheat, oats, quinoa, millet), Legumes (beans, lentils, chickpeas, black beans), Dairy products (milk, cheese, yogurt, paneer, ghee), Eggs, Tofu, Tempeh, Seitan, Nuts (almonds, walnuts, cashews), Seeds (chia, flax, sunflower), Plant-based proteins, Plant-based milk
+- ABSOLUTELY FORBIDDEN: Meat (beef, pork, lamb, mutton, goat), Fish (any type), Seafood (shrimp, prawns, crab, lobster), Poultry (chicken, turkey, duck, quail), Any animal flesh, Gelatin, Fish sauce, Meat-based broths, Animal-based stocks
+- VALIDATION CHECK: Before finalizing each meal description, verify it contains NO meat, fish, poultry, or seafood
+- If a meal could be ambiguous, choose a clearly vegetarian alternative
+- Example CORRECT meals: "Dal and rice with vegetables", "Paneer curry with roti", "Vegetable biryani", "Tofu stir-fry with quinoa", "Scrambled eggs with toast", "Greek yogurt with fruits"
+- Example FORBIDDEN meals: "Chicken curry with rice", "Fish curry", "Beef stew", "Prawn biryani", "Mutton curry" - DO NOT include these
+
+This restriction applies to ALL 7 days of the weekly planner. Every single meal must be vegetarian.`
+    : `DIETARY PREFERENCE FOR DIET PLAN:
+The user is NON-VEGETARIAN.
+
+FOR EACH MEAL (breakfast, midMorningSnack, lunch, eveningSnack, dinner) in the dietPlan:
+- You CAN include BOTH vegetarian and non-vegetarian meals
+- ALLOWED: All vegetarian meals (dal, vegetables, grains, legumes, dairy, eggs) PLUS non-vegetarian meals (lean meats like chicken, fish, turkey, eggs, seafood)
+- You have flexibility to mix both types throughout the week
+- Include a balanced variety of both vegetarian and non-vegetarian options
+- Example meals: "Grilled chicken with vegetables", "Dal and rice", "Fish curry with rice", "Paneer curry", "Egg curry with roti", "Vegetable stir-fry"`;
 
   const plannerPrompt = `
 Additionally, if requested, generate a 7-day weeklyPlanner array with entries:
@@ -256,6 +347,32 @@ export const generateAnalysisController = async (req, res) => {
         error: "Failed to generate analysis. Please try again in a moment.",
         details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}` 
       });
+    }
+
+    // Post-process validation: Filter non-vegetarian items if user is vegetarian
+    const currentDietPreference = dietPreference || 'non-vegetarian';
+    const isVegetarian = currentDietPreference === 'vegetarian';
+    
+    if (isVegetarian && parsed) {
+      // Filter foodsToEat array in report
+      if (parsed.report && parsed.report.foodsToEat && Array.isArray(parsed.report.foodsToEat)) {
+        const originalLength = parsed.report.foodsToEat.length;
+        parsed.report.foodsToEat = filterVegetarianItems(parsed.report.foodsToEat, true);
+        if (parsed.report.foodsToEat.length < originalLength) {
+          console.warn(`Filtered out ${originalLength - parsed.report.foodsToEat.length} non-vegetarian items from foodsToEat`);
+        }
+      }
+      
+      // Filter weeklyPlanner diet plans
+      if (parsed.weeklyPlanner && Array.isArray(parsed.weeklyPlanner)) {
+        parsed.weeklyPlanner = parsed.weeklyPlanner.map(day => {
+          if (day.dietPlan) {
+            day.dietPlan = filterVegetarianDietPlan(day.dietPlan, true);
+          }
+          return day;
+        });
+        console.log('Filtered non-vegetarian items from weekly planner diet plans');
+      }
     }
 
     // Persist report if requested

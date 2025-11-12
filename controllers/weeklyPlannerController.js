@@ -6,10 +6,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import "dotenv/config";
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-2.5-flash"; // or "gemini-2.5-pro"
+const MODEL_ID = "gemini-1.5-flash"; // Stable Gemini model
 
 // Helper function to delay execution
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Helper function to check if a food item contains non-vegetarian ingredients
 const containsNonVegetarian = (foodItem) => {
@@ -62,30 +62,11 @@ const filterVegetarianDietPlan = (dietPlan, isVegetarian) => {
 };
 
 function buildCombinedPrompt({ symptomsText, type, context, dietPreference }) {
-  const isVegetarian = dietPreference === 'vegetarian';
-  
-  const dietNote = dietPreference 
-    ? isVegetarian
-      ? `🚨 CRITICAL DIETARY RESTRICTION - STRICTLY ENFORCE: 
-The user is VEGETARIAN. This is a STRICT requirement that MUST be followed without exception.
-
-FOR foodsToEat field and dietPlan:
-- MUST ONLY recommend vegetarian foods
-- ALLOWED: fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins (tofu, tempeh, seitan)
-- ABSOLUTELY FORBIDDEN: meat (beef, pork, lamb, etc.), fish, seafood, poultry (chicken, turkey, duck), any animal flesh, gelatin, fish sauce, meat-based broths
-- DOUBLE-CHECK: Before adding any food item, verify it contains NO meat, fish, poultry, or seafood
-- If a food item could be ambiguous, choose a clearly vegetarian alternative
-
-This restriction applies to ALL food recommendations.`
-      : `DIETARY PREFERENCE:
-The user is NON-VEGETARIAN. 
-
-FOR foodsToEat field and dietPlan:
-- You CAN recommend BOTH vegetarian AND non-vegetarian foods
-- ALLOWED: All vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs) PLUS lean meats (chicken, fish, turkey), seafood, eggs, and other animal proteins
-- You have flexibility to include a mix of both types based on nutritional needs
-- Balance the recommendations with both plant-based and animal-based protein sources`
-    : '';
+  const dietNote = dietPreference
+    ? dietPreference === "vegetarian"
+      ? "IMPORTANT: The user is VEGETARIAN. In foodsToEat and dietPlan, recommend ONLY vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins). Do NOT include any meat, fish, or poultry."
+      : "IMPORTANT: The user is NON-VEGETARIAN. In foodsToEat and dietPlan, you can recommend both vegetarian and non-vegetarian foods (meat, fish, poultry, as well as fruits, vegetables, grains, etc.)."
+    : "";
 
   const reportPrompt = `
 You are a health analysis AI. Analyze the following symptoms and provide a structured response in JSON format.
@@ -101,9 +82,11 @@ Provide:
 4. Prevention tips
 5. Medical remedies
 6. Yoga exercises
-7. Foods to eat ${isVegetarian 
-  ? '(STRICTLY ONLY vegetarian foods - NO meat, fish, poultry, or seafood allowed)' 
-  : '(can include both vegetarian and non-vegetarian options)'}
+7. Foods to eat ${
+    dietPreference === "vegetarian"
+      ? "(ONLY vegetarian foods)"
+      : "(can include both vegetarian and non-vegetarian options)"
+  }
 8. Foods to avoid
 9. Health score (0-100)
 10. Brief summary
@@ -111,29 +94,10 @@ Provide:
 Format as valid JSON with these exact keys: symptoms, causes, deficiencies, prevention, remedies, yoga, foodsToEat, foodsToAvoid, healthScore, summary
 `.trim();
 
-  const dietInstructions = isVegetarian
-    ? `🚨 CRITICAL DIETARY RESTRICTION FOR DIET PLAN - STRICTLY ENFORCE:
-The user is VEGETARIAN. This is a STRICT requirement that MUST be followed for ALL meals in the dietPlan.
-
-FOR EACH MEAL (breakfast, midMorningSnack, lunch, eveningSnack, dinner) in the dietPlan:
-- MUST ONLY provide vegetarian meals
-- ALLOWED INGREDIENTS: Vegetables (all types), Fruits (all types), Grains (rice, wheat, oats, quinoa, millet), Legumes (beans, lentils, chickpeas, black beans), Dairy products (milk, cheese, yogurt, paneer, ghee), Eggs, Tofu, Tempeh, Seitan, Nuts (almonds, walnuts, cashews), Seeds (chia, flax, sunflower), Plant-based proteins, Plant-based milk
-- ABSOLUTELY FORBIDDEN: Meat (beef, pork, lamb, mutton, goat), Fish (any type), Seafood (shrimp, prawns, crab, lobster), Poultry (chicken, turkey, duck, quail), Any animal flesh, Gelatin, Fish sauce, Meat-based broths, Animal-based stocks
-- VALIDATION CHECK: Before finalizing each meal description, verify it contains NO meat, fish, poultry, or seafood
-- If a meal could be ambiguous, choose a clearly vegetarian alternative
-- Example CORRECT meals: "Dal and rice with vegetables", "Paneer curry with roti", "Vegetable biryani", "Tofu stir-fry with quinoa", "Scrambled eggs with toast", "Greek yogurt with fruits"
-- Example FORBIDDEN meals: "Chicken curry with rice", "Fish curry", "Beef stew", "Prawn biryani", "Mutton curry" - DO NOT include these
-
-This restriction applies to ALL 7 days of the weekly planner. Every single meal must be vegetarian.`
-    : `DIETARY PREFERENCE FOR DIET PLAN:
-The user is NON-VEGETARIAN.
-
-FOR EACH MEAL (breakfast, midMorningSnack, lunch, eveningSnack, dinner) in the dietPlan:
-- You CAN include BOTH vegetarian and non-vegetarian meals
-- ALLOWED: All vegetarian meals (dal, vegetables, grains, legumes, dairy, eggs) PLUS non-vegetarian meals (lean meats like chicken, fish, turkey, eggs, seafood)
-- You have flexibility to mix both types throughout the week
-- Include a balanced variety of both vegetarian and non-vegetarian options
-- Example meals: "Grilled chicken with vegetables", "Dal and rice", "Fish curry with rice", "Paneer curry", "Egg curry with roti", "Vegetable stir-fry"`;
+  const dietInstructions =
+    dietPreference === "vegetarian"
+      ? "IMPORTANT: User is VEGETARIAN. In dietPlan, provide ONLY vegetarian meals. Include: vegetables, fruits, grains, legumes, dairy, eggs, tofu, tempeh, nuts, seeds. EXCLUDE: meat, fish, poultry, seafood, any animal flesh."
+      : "IMPORTANT: User is NON-VEGETARIAN. In dietPlan, you can include both vegetarian and non-vegetarian options: lean meats (chicken, fish), eggs, dairy, vegetables, fruits, grains, legumes.";
 
   const plannerPrompt = `
 Additionally, if requested, generate a 7-day weeklyPlanner array with entries:
@@ -175,7 +139,7 @@ function getResponseSchema({ wantReport, wantPlanner }) {
   const base = {
     type: "object",
     properties: {},
-    additionalProperties: false
+    additionalProperties: false,
   };
 
   if (wantReport) {
@@ -191,7 +155,7 @@ function getResponseSchema({ wantReport, wantPlanner }) {
         foodsToEat: { type: "array", items: { type: "string" } },
         foodsToAvoid: { type: "array", items: { type: "string" } },
         healthScore: { type: "number" },
-        summary: { type: "string" }
+        summary: { type: "string" },
       },
       required: [
         "symptoms",
@@ -203,9 +167,9 @@ function getResponseSchema({ wantReport, wantPlanner }) {
         "foodsToEat",
         "foodsToAvoid",
         "healthScore",
-        "summary"
+        "summary",
       ],
-      additionalProperties: false
+      additionalProperties: false,
     };
   }
 
@@ -225,7 +189,7 @@ function getResponseSchema({ wantReport, wantPlanner }) {
               lunch: { type: "string" },
               eveningSnack: { type: "string" },
               dinner: { type: "string" },
-              hydration: { type: "string" }
+              hydration: { type: "string" },
             },
             required: [
               "breakfast",
@@ -233,9 +197,9 @@ function getResponseSchema({ wantReport, wantPlanner }) {
               "lunch",
               "eveningSnack",
               "dinner",
-              "hydration"
+              "hydration",
             ],
-            additionalProperties: false
+            additionalProperties: false,
           },
           exercises: { type: "array", items: { type: "string" } },
           medicines: {
@@ -244,18 +208,25 @@ function getResponseSchema({ wantReport, wantPlanner }) {
               type: "object",
               properties: {
                 name: { type: "string" },
-                note: { type: "string" }
+                note: { type: "string" },
               },
               required: ["name", "note"],
-              additionalProperties: false
-            }
+              additionalProperties: false,
+            },
           },
           progress: { type: "number" },
-          focusNote: { type: "string" }
+          focusNote: { type: "string" },
         },
-        required: ["day", "dietPlan", "exercises", "medicines", "progress", "focusNote"],
-        additionalProperties: false
-      }
+        required: [
+          "day",
+          "dietPlan",
+          "exercises",
+          "medicines",
+          "progress",
+          "focusNote",
+        ],
+        additionalProperties: false,
+      },
     };
   }
 
@@ -265,7 +236,18 @@ function getResponseSchema({ wantReport, wantPlanner }) {
 export const generateAnalysisController = async (req, res) => {
   try {
     const type = (req.query.type || "both").toLowerCase(); // report | planner | both
-    const { userId, symptomsText, duration, severity, frequency, worseCondition, existingConditions, medications, lifestyle, dietPreference } = req.body;
+    const {
+      userId,
+      symptomsText,
+      duration,
+      severity,
+      frequency,
+      worseCondition,
+      existingConditions,
+      medications,
+      lifestyle,
+      dietPreference,
+    } = req.body;
 
     // Validate user
     const user = await User.findById(userId);
@@ -280,14 +262,19 @@ export const generateAnalysisController = async (req, res) => {
       existingConditions,
       medications,
       lifestyle,
-      dietPreference: dietPreference || 'non-vegetarian'
+      dietPreference: dietPreference || "non-vegetarian",
     });
 
     const wantReport = type === "report" || type === "both";
     const wantPlanner = type === "planner" || type === "both";
 
     // Build prompt and schema
-    const prompt = buildCombinedPrompt({ symptomsText, type, context, dietPreference: dietPreference || 'non-vegetarian' });
+    const prompt = buildCombinedPrompt({
+      symptomsText,
+      type,
+      context,
+      dietPreference: dietPreference || "non-vegetarian",
+    });
     const responseSchema = getResponseSchema({ wantReport, wantPlanner });
 
     // Gemini call with strict JSON output and retry logic
@@ -297,8 +284,8 @@ export const generateAnalysisController = async (req, res) => {
         temperature: 0.6,
         topP: 0.9,
         responseMimeType: "application/json",
-        responseSchema
-      }
+        responseSchema,
+      },
     });
 
     // Retry logic: 3 attempts
@@ -306,31 +293,34 @@ export const generateAnalysisController = async (req, res) => {
     let lastError = null;
     let parsed = null;
     let aiText = null;
-    
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`Attempting to get Gemini response for ${type} (Attempt ${attempt}/${MAX_RETRIES})`);
-        
+        console.log(
+          `Attempting to get Gemini response for ${type} (Attempt ${attempt}/${MAX_RETRIES})`
+        );
+
         const response = await model.generateContent(prompt);
         aiText = response?.response?.text?.();
-        
-        if (!aiText || aiText.trim() === '') {
+
+        if (!aiText || aiText.trim() === "") {
           throw new Error("Empty response from AI");
         }
 
         // Try to parse the JSON
         try {
           parsed = JSON.parse(aiText);
-          console.log(`Successfully got and parsed ${type} from Gemini on attempt ${attempt}`);
+          console.log(
+            `Successfully got and parsed ${type} from Gemini on attempt ${attempt}`
+          );
           break; // Success - exit retry loop
         } catch (parseError) {
           throw new Error(`Invalid JSON returned: ${parseError.message}`);
         }
-
       } catch (error) {
         lastError = error;
         console.error(`Attempt ${attempt} failed:`, error.message);
-        
+
         // If this is not the last attempt, wait before retrying
         if (attempt < MAX_RETRIES) {
           const delay = attempt * 1000; // Exponential backoff: 1s, 2s
@@ -342,10 +332,13 @@ export const generateAnalysisController = async (req, res) => {
 
     // Check if all retries failed
     if (!parsed) {
-      console.error(`All ${MAX_RETRIES} attempts failed for ${type}. Last error:`, lastError.message);
-      return res.status(500).json({ 
+      console.error(
+        `All ${MAX_RETRIES} attempts failed for ${type}. Last error:`,
+        lastError.message
+      );
+      return res.status(500).json({
         error: "Failed to generate analysis. Please try again in a moment.",
-        details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}` 
+        details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}`,
       });
     }
 
@@ -397,7 +390,8 @@ export const generateAnalysisController = async (req, res) => {
         yoga: Array.isArray(r.yoga) ? r.yoga : [],
         foodsToEat: Array.isArray(r.foodsToEat) ? r.foodsToEat : [],
         foodsToAvoid: Array.isArray(r.foodsToAvoid) ? r.foodsToAvoid : [],
-        healthScore: typeof r.healthScore === "number" ? Math.round(r.healthScore) : 70
+        healthScore:
+          typeof r.healthScore === "number" ? Math.round(r.healthScore) : 70,
       };
 
       const savedReport = await HealthReport.create(reportDoc);
@@ -415,7 +409,7 @@ export const generateAnalysisController = async (req, res) => {
         exercises: Array.isArray(d.exercises) ? d.exercises : [],
         medicines: Array.isArray(d.medicines) ? d.medicines : [],
         progress: typeof d.progress === "number" ? d.progress : 0,
-        focusNote: d.focusNote || ""
+        focusNote: d.focusNote || "",
       }));
 
       const weekStart = new Date();
@@ -425,7 +419,7 @@ export const generateAnalysisController = async (req, res) => {
         user: user._id,
         weekStart,
         weekEnd,
-        days
+        days,
       });
 
       // Add to user's dietPlans array (not weeklyPlanners)
@@ -441,12 +435,14 @@ export const generateAnalysisController = async (req, res) => {
       success: true,
       message: "Gemini generation complete",
       data: result,
-      rawAI: aiText
+      rawAI: aiText,
     });
   } catch (error) {
     console.error("generateAnalysisController error:", error);
     const status = error.status || 500;
-    return res.status(status).json({ error: "Server error", details: error.message });
+    return res
+      .status(status)
+      .json({ error: "Server error", details: error.message });
   }
 };
 
@@ -457,32 +453,37 @@ export const getPlannersByUser = async (req, res) => {
 
     const planners = await WeeklyPlanner.find({ user: userId })
       .sort({ createdAt: -1 }) // Most recent first
-      .populate('user', 'name email')
+      .populate("user", "name email")
       .lean();
 
     // Transform the data to match frontend expectations
     const transformedPlanners = planners.map((planner) => ({
       _id: planner._id,
       id: planner._id.toString(),
-      userId: planner.user?._id?.toString() || planner.user?.toString() || userId,
-      createdDate: planner.createdAt || planner.weekStart || new Date().toISOString(),
+      userId:
+        planner.user?._id?.toString() || planner.user?.toString() || userId,
+      createdDate:
+        planner.createdAt || planner.weekStart || new Date().toISOString(),
       weekStart: planner.weekStart,
       weekEnd: planner.weekEnd,
-      weekPlan: planner.days?.map((day) => ({
-        day: day.day || '',
-        date: day.date ? new Date(day.date).toISOString() : new Date().toISOString(),
-        diet: day.dietPlan || {},
-        exercises: Array.isArray(day.exercises) ? day.exercises : [],
-        medicines: Array.isArray(day.medicines) ? day.medicines : [],
-        notes: day.focusNote || '',
-        progress: day.progress || 0
-      })) || []
+      weekPlan:
+        planner.days?.map((day) => ({
+          day: day.day || "",
+          date: day.date
+            ? new Date(day.date).toISOString()
+            : new Date().toISOString(),
+          diet: day.dietPlan || {},
+          exercises: Array.isArray(day.exercises) ? day.exercises : [],
+          medicines: Array.isArray(day.medicines) ? day.medicines : [],
+          notes: day.focusNote || "",
+          progress: day.progress || 0,
+        })) || [],
     }));
 
     res.status(200).json({
       success: true,
       count: transformedPlanners.length,
-      data: transformedPlanners
+      data: transformedPlanners,
     });
   } catch (error) {
     console.error("Get planners by user error:", error);
@@ -497,41 +498,50 @@ export const getPlannerById = async (req, res) => {
     const userId = req.userId; // From middleware
 
     const planner = await WeeklyPlanner.findById(id)
-      .populate('user', 'name email')
+      .populate("user", "name email")
       .lean();
 
     if (!planner) {
-      return res.status(404).json({ success: false, error: "Planner not found" });
+      return res
+        .status(404)
+        .json({ success: false, error: "Planner not found" });
     }
 
     // Check if planner belongs to user
-    const plannerUserId = planner.user?._id?.toString() || planner.user?.toString();
+    const plannerUserId =
+      planner.user?._id?.toString() || planner.user?.toString();
     if (userId && plannerUserId !== userId) {
-      return res.status(403).json({ success: false, error: "Unauthorized access" });
+      return res
+        .status(403)
+        .json({ success: false, error: "Unauthorized access" });
     }
 
     // Transform the data
     const transformedPlanner = {
       _id: planner._id,
       id: planner._id.toString(),
-      userId: plannerUserId || '',
-      createdDate: planner.createdAt || planner.weekStart || new Date().toISOString(),
+      userId: plannerUserId || "",
+      createdDate:
+        planner.createdAt || planner.weekStart || new Date().toISOString(),
       weekStart: planner.weekStart,
       weekEnd: planner.weekEnd,
-      weekPlan: planner.days?.map((day) => ({
-        day: day.day || '',
-        date: day.date ? new Date(day.date).toISOString() : new Date().toISOString(),
-        diet: day.dietPlan || {},
-        exercises: Array.isArray(day.exercises) ? day.exercises : [],
-        medicines: Array.isArray(day.medicines) ? day.medicines : [],
-        notes: day.focusNote || '',
-        progress: day.progress || 0
-      })) || []
+      weekPlan:
+        planner.days?.map((day) => ({
+          day: day.day || "",
+          date: day.date
+            ? new Date(day.date).toISOString()
+            : new Date().toISOString(),
+          diet: day.dietPlan || {},
+          exercises: Array.isArray(day.exercises) ? day.exercises : [],
+          medicines: Array.isArray(day.medicines) ? day.medicines : [],
+          notes: day.focusNote || "",
+          progress: day.progress || 0,
+        })) || [],
     };
 
     res.status(200).json({
       success: true,
-      data: transformedPlanner
+      data: transformedPlanner,
     });
   } catch (error) {
     console.error("Get planner by ID error:", error);

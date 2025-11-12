@@ -1,27 +1,74 @@
 // controllers/healthReportController.js
+import axios from "axios";
 import HealthReport from "../models/Health_Report.js";
 import WeeklyPlanner from "../models/DietPlan.js";
 import User from "../models/user_model.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  extractAndNormalizeSymptoms,
+  validateSymptoms,
+} from "../services/symptomNormalizer.js";
 import "dotenv/config";
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-2.0-flash"; // or "gemini-2.5-pro"
+const MODEL_ID = "gemini-1.5-flash"; // Stable Gemini model
+const ML_API_URL = process.env.ML_API_URL || "http://localhost:8000";
 
 // Helper function to delay execution
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function buildCombinedPrompt({ symptomsText, type, context, dietPreference }) {
-  const dietNote = dietPreference 
-    ? dietPreference === 'vegetarian' 
-      ? 'IMPORTANT: The user is VEGETARIAN. In FoodsToEat, recommend ONLY vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins). Do NOT include any meat, fish, or poultry.'
-      : 'IMPORTANT: The user is NON-VEGETARIAN. In FoodsToEat, you can recommend both vegetarian and non-vegetarian foods (meat, fish, poultry, as well as fruits, vegetables, grains, etc.).'
-    : '';
+function buildCombinedPrompt({
+  symptomsText,
+  type,
+  context,
+  dietPreference,
+  mlPrediction = null,
+}) {
+  const dietNote = dietPreference
+    ? dietPreference === "vegetarian"
+      ? "IMPORTANT: The user is VEGETARIAN. In FoodsToEat, recommend ONLY vegetarian foods (fruits, vegetables, grains, legumes, dairy, eggs, plant-based proteins). Do NOT include any meat, fish, or poultry."
+      : "IMPORTANT: The user is NON-VEGETARIAN. In FoodsToEat, you can recommend both vegetarian and non-vegetarian foods (meat, fish, poultry, as well as fruits, vegetables, grains, etc.)."
+    : "";
+
+  // Add ML prediction context if available
+  const mlInfo =
+    mlPrediction && mlPrediction.predicted_disease
+      ? `\n\n🔬 ADVANCED ANALYSIS RESULTS:
+- Primary Diagnosis: ${mlPrediction.predicted_disease}
+- Analysis Confidence: ${
+          mlPrediction.confidence
+            ? (mlPrediction.confidence * 100).toFixed(1) + "%"
+            : "N/A"
+        }
+- Analyzed Symptoms: ${mlPrediction.extracted_symptoms?.join(", ") || "N/A"}
+- Urgency Assessment: ${mlPrediction.urgency_flag?.level || "N/A"}
+- Recommended Action: ${
+          mlPrediction.urgency_flag?.recommended_action ||
+          "Consult a healthcare professional"
+        }
+${
+  mlPrediction.precautions && mlPrediction.precautions.length > 0
+    ? "\n- Key Precautions:\n  * " + mlPrediction.precautions.join("\n  * ")
+    : ""
+}
+${
+  mlPrediction.top_k
+    ? "\n- Alternative Possible Conditions: " +
+      mlPrediction.top_k
+        .slice(1, 4)
+        .map((p) => `${p.disease} (${(p.confidence * 100).toFixed(1)}%)`)
+        .join(", ")
+    : ""
+}
+
+Please incorporate this advanced diagnostic analysis and its precautions into your comprehensive health report. Consider the provided precautions when generating PreventionTips and ThingsToFollow. Provide detailed health recommendations based on this analysis and your medical knowledge. DO NOT mention "ML" or "machine learning" in your response - present this as an integrated medical analysis.`
+      : "\n\n💡 Note: Advanced diagnostic analysis not available for this request.";
 
   const reportPrompt = `
 You are a health analysis AI. Analyze the following symptoms and provide a structured response in JSON format.
 
 Symptoms: "${symptomsText}"
+${mlInfo}
 
 ${dietNote}
 
@@ -47,7 +94,11 @@ For NutritionalDeficiencies, analyze what vitamins or minerals might be lacking.
 For RecommendedMedicines, include general recommendations and note to consult a doctor.
 For ExerciseRecommendations, provide specific exercise suggestions.
 ${dietNote}
-For FoodsToEat: ${dietPreference === 'vegetarian' ? 'Recommend ONLY vegetarian foods. Include: fruits, vegetables, whole grains, legumes, nuts, seeds, dairy products, eggs, plant-based proteins. EXCLUDE: meat, fish, poultry, seafood.' : 'Recommend both vegetarian and non-vegetarian options including: lean meats, fish, poultry, eggs, dairy, fruits, vegetables, whole grains, legumes.'}
+For FoodsToEat: ${
+    dietPreference === "vegetarian"
+      ? "Recommend ONLY vegetarian foods. Include: fruits, vegetables, whole grains, legumes, nuts, seeds, dairy products, eggs, plant-based proteins. EXCLUDE: meat, fish, poultry, seafood."
+      : "Recommend both vegetarian and non-vegetarian options including: lean meats, fish, poultry, eggs, dairy, fruits, vegetables, whole grains, legumes."
+  }
 
 Format as valid JSON with these EXACT keys (all fields required):
 {
@@ -69,9 +120,10 @@ Format as valid JSON with these EXACT keys (all fields required):
 }
 `.trim();
 
-  const dietInstructions = dietPreference === 'vegetarian'
-    ? 'IMPORTANT: User is VEGETARIAN. In dietPlan, provide ONLY vegetarian meals. Include: vegetables, fruits, grains, legumes, dairy, eggs, tofu, tempeh, nuts, seeds. EXCLUDE: meat, fish, poultry, seafood, any animal flesh.'
-    : 'IMPORTANT: User is NON-VEGETARIAN. In dietPlan, you can include both vegetarian and non-vegetarian options: lean meats (chicken, fish), eggs, dairy, vegetables, fruits, grains, legumes.';
+  const dietInstructions =
+    dietPreference === "vegetarian"
+      ? "IMPORTANT: User is VEGETARIAN. In dietPlan, provide ONLY vegetarian meals. Include: vegetables, fruits, grains, legumes, dairy, eggs, tofu, tempeh, nuts, seeds. EXCLUDE: meat, fish, poultry, seafood, any animal flesh."
+      : "IMPORTANT: User is NON-VEGETARIAN. In dietPlan, you can include both vegetarian and non-vegetarian options: lean meats (chicken, fish), eggs, dairy, vegetables, fruits, grains, legumes.";
 
   const plannerPrompt = `
 Additionally, if requested, generate a 7-day weeklyPlanner array with entries:
@@ -113,12 +165,90 @@ Context (may help personalize): ${context}
 export const generateAnalysisController = async (req, res) => {
   try {
     const type = (req.query.type || "both").toLowerCase(); // report | planner | both
-    const { userId, symptomsText, duration, severity, frequency, worseCondition, existingConditions, medications, lifestyle, dietPreference } = req.body;
+    const {
+      userId,
+      symptomsText,
+      duration,
+      severity,
+      frequency,
+      worseCondition,
+      existingConditions,
+      medications,
+      lifestyle,
+      dietPreference,
+    } = req.body;
 
     // Validate user
     let user = null;
     if (userId) {
       user = await User.findById(userId);
+    }
+
+    // 🆕 STEP 1: EXTRACT AND NORMALIZE SYMPTOMS FROM NATURAL LANGUAGE
+    console.log("🔍 Processing natural language input:", symptomsText);
+    let extractedSymptoms = [];
+    let mlPrediction = null;
+
+    if (symptomsText && symptomsText.trim() !== "") {
+      try {
+        // Use Gemini to extract symptoms from natural language
+        const geminiModel = genai.getGenerativeModel({
+          model: MODEL_ID,
+          generationConfig: {
+            temperature: 0.3,
+            topP: 0.9,
+            responseMimeType: "application/json",
+          },
+        });
+
+        extractedSymptoms = await extractAndNormalizeSymptoms(
+          symptomsText,
+          geminiModel
+        );
+        console.log("✅ Extracted symptoms:", extractedSymptoms);
+
+        // 🆕 STEP 2: VALIDATE SYMPTOMS
+        const validation = validateSymptoms(extractedSymptoms);
+        const validSymptoms = validation.validSymptoms;
+
+        // 🔬 STEP 3: ML PREDICTION WITH VALIDATED SYMPTOMS
+        if (validSymptoms && validSymptoms.length > 0) {
+          try {
+            console.log(
+              "🔬 Calling ML API with extracted symptoms:",
+              validSymptoms
+            );
+            const mlResponse = await axios.post(
+              `${ML_API_URL}/predict`,
+              {
+                symptoms: validSymptoms,
+                metadata: { userId },
+              },
+              { timeout: 5000 }
+            );
+
+            mlPrediction = mlResponse.data;
+            console.log("✅ ML Prediction received:", {
+              disease: mlPrediction.predicted_disease,
+              confidence: `${(mlPrediction.confidence * 100).toFixed(1)}%`,
+              urgency: mlPrediction.urgency_flag?.level,
+              precautions: mlPrediction.precautions?.length || 0,
+            });
+          } catch (mlError) {
+            console.warn(
+              "⚠️ ML API error (continuing without ML):",
+              mlError.message
+            );
+          }
+        } else {
+          console.log("⚠️ No valid symptoms extracted for ML prediction");
+        }
+      } catch (extractError) {
+        console.error("❌ Error in symptom extraction:", extractError.message);
+        // Continue without ML prediction
+      }
+    } else {
+      console.log("⚠️ No symptoms text provided");
     }
 
     // Arrays normalization (optional personalization context)
@@ -130,23 +260,29 @@ export const generateAnalysisController = async (req, res) => {
       existingConditions,
       medications,
       lifestyle,
-      dietPreference: dietPreference || 'non-vegetarian' // Default to non-vegetarian if not provided
+      dietPreference: dietPreference || "non-vegetarian", // Default to non-vegetarian if not provided
     });
 
     const wantReport = type === "report" || type === "both";
     const wantPlanner = type === "planner" || type === "both";
 
-    // Build prompt and schema
-    const prompt = buildCombinedPrompt({ symptomsText, type, context, dietPreference: dietPreference || 'non-vegetarian' });
+    // Build prompt and schema (now includes ML prediction)
+    const prompt = buildCombinedPrompt({
+      symptomsText,
+      type,
+      context,
+      dietPreference: dietPreference || "non-vegetarian",
+      mlPrediction, // Pass ML prediction to prompt
+    });
 
     // Gemini call with strict JSON output and retry logic
     const model = genai.getGenerativeModel({
-    model: MODEL_ID,
+      model: MODEL_ID,
       generationConfig: {
         temperature: 0.6,
         topP: 0.9,
         responseMimeType: "application/json",
-      }
+      },
     });
 
     // Retry logic: 3 attempts
@@ -154,15 +290,17 @@ export const generateAnalysisController = async (req, res) => {
     let lastError = null;
     let parsed = null;
     let aiText = null;
-    
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`Attempting to get Gemini response for ${type} (Attempt ${attempt}/${MAX_RETRIES})`);
-        
+        console.log(
+          `Attempting to get Gemini response for ${type} (Attempt ${attempt}/${MAX_RETRIES})`
+        );
+
         const response = await model.generateContent(prompt);
         aiText = response?.response?.text?.();
-        
-        if (!aiText || aiText.trim() === '') {
+
+        if (!aiText || aiText.trim() === "") {
           throw new Error("Empty response from AI");
         }
 
@@ -182,20 +320,21 @@ export const generateAnalysisController = async (req, res) => {
         if (!jsonMatch) {
           throw new Error("No JSON object found in response");
         }
-            
+
         // Try to parse the JSON
         try {
           parsed = JSON.parse(jsonMatch[0]);
-          console.log(`Successfully got and parsed ${type} from Gemini on attempt ${attempt}`);
+          console.log(
+            `Successfully got and parsed ${type} from Gemini on attempt ${attempt}`
+          );
           break; // Success - exit retry loop
         } catch (parseError) {
           throw new Error(`Invalid JSON returned: ${parseError.message}`);
         }
-
       } catch (error) {
         lastError = error;
         console.error(`Attempt ${attempt} failed:`, error.message);
-        
+
         // If this is not the last attempt, wait before retrying
         if (attempt < MAX_RETRIES) {
           const delay = attempt * 1000; // Exponential backoff: 1s, 2s
@@ -207,20 +346,23 @@ export const generateAnalysisController = async (req, res) => {
 
     // Check if all retries failed
     if (!parsed) {
-      console.error(`All ${MAX_RETRIES} attempts failed for ${type}. Last error:`, lastError.message);
-      return res.status(500).json({ 
+      console.error(
+        `All ${MAX_RETRIES} attempts failed for ${type}. Last error:`,
+        lastError.message
+      );
+      return res.status(500).json({
         error: "Failed to generate analysis. Please try again in a moment.",
-        details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}` 
+        details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}`,
       });
     }
 
     // Persist report if requested
     const result = {};
-        console.log("Parsed output keys:", Object.keys(parsed));
+    console.log("Parsed output keys:", Object.keys(parsed));
     if (wantReport) {
       const r = parsed.report || parsed;
       console.log("Report data:", JSON.stringify(r, null, 2));
-      
+
       const reportDoc = {
         userId: user ? user._id.toString() : null,
         symptoms: Array.isArray(r.DetectedSymptoms) ? r.DetectedSymptoms : [],
@@ -231,21 +373,46 @@ export const generateAnalysisController = async (req, res) => {
         existingConditions,
         medications,
         lifestyle,
-        dietPreference: dietPreference || 'non-vegetarian',
+        dietPreference: dietPreference || "non-vegetarian",
         summary: r.summary || "",
         causes: Array.isArray(r.PossibleCauses) ? r.PossibleCauses : [],
-        deficiencies: Array.isArray(r.NutritionalDeficiencies) ? r.NutritionalDeficiencies : [],
+        deficiencies: Array.isArray(r.NutritionalDeficiencies)
+          ? r.NutritionalDeficiencies
+          : [],
         prevention: Array.isArray(r.PreventionTips) ? r.PreventionTips : [],
-        medicines: Array.isArray(r.RecommendedMedicines) ? r.RecommendedMedicines : [],
-        naturalRemedies: Array.isArray(r.NaturalRemediesAndHerbs) ? r.NaturalRemediesAndHerbs : [],
+        medicines: Array.isArray(r.RecommendedMedicines)
+          ? r.RecommendedMedicines
+          : [],
+        naturalRemedies: Array.isArray(r.NaturalRemediesAndHerbs)
+          ? r.NaturalRemediesAndHerbs
+          : [],
         yoga: Array.isArray(r.YogaPractices) ? r.YogaPractices : [],
-        exercises: Array.isArray(r.ExerciseRecommendations) ? r.ExerciseRecommendations : [],
+        exercises: Array.isArray(r.ExerciseRecommendations)
+          ? r.ExerciseRecommendations
+          : [],
         cure: Array.isArray(r.CureAndTreatment) ? r.CureAndTreatment : [],
         foodsToEat: Array.isArray(r.FoodsToEat) ? r.FoodsToEat : [],
         foodsToAvoid: Array.isArray(r.FoodsToAvoid) ? r.FoodsToAvoid : [],
         thingsToFollow: Array.isArray(r.ThingsToFollow) ? r.ThingsToFollow : [],
         thingsToAvoid: Array.isArray(r.ThingsToAvoid) ? r.ThingsToAvoid : [],
-        healthScore: typeof r.HealthScore === "number" ? Math.round(r.HealthScore) : 70
+        healthScore:
+          typeof r.HealthScore === "number" ? Math.round(r.HealthScore) : 70,
+        // Store ML prediction data if available
+        mlPrediction:
+          mlPrediction && mlPrediction.predicted_disease
+            ? {
+                disease: mlPrediction.predicted_disease,
+                confidence: mlPrediction.confidence,
+                urgencyLevel: mlPrediction.urgency_flag?.level,
+                urgencyReason: mlPrediction.urgency_flag?.reason,
+                recommendedAction:
+                  mlPrediction.urgency_flag?.recommended_action,
+                precautions: Array.isArray(mlPrediction.precautions)
+                  ? mlPrediction.precautions
+                  : [],
+                topPredictions: mlPrediction.top_k || [],
+              }
+            : null,
       };
 
       const savedReport = await HealthReport.create(reportDoc);
@@ -265,7 +432,7 @@ export const generateAnalysisController = async (req, res) => {
         exercises: Array.isArray(d.exercises) ? d.exercises : [],
         medicines: Array.isArray(d.medicines) ? d.medicines : [],
         progress: typeof d.progress === "number" ? d.progress : 0,
-        focusNote: d.focusNote || ""
+        focusNote: d.focusNote || "",
       }));
 
       const weekStart = new Date();
@@ -275,7 +442,7 @@ export const generateAnalysisController = async (req, res) => {
         user: user ? user._id : null,
         weekStart,
         weekEnd,
-        days
+        days,
       });
 
       if (user) {
@@ -287,14 +454,20 @@ export const generateAnalysisController = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Gemini generation complete",
+      message: mlPrediction
+        ? "Advanced health analysis complete"
+        : "Health analysis complete",
       data: result,
-      rawAI: aiText
+      extractedSymptoms: extractedSymptoms || [], // Include extracted symptoms
+      mlPrediction: mlPrediction || null, // Include ML prediction in response
+      rawAI: aiText,
     });
   } catch (error) {
     console.error("generateAnalysisController error:", error);
     const status = error.status || 500;
-    return res.status(status).json({ error: "Server error", details: error.message });
+    return res
+      .status(status)
+      .json({ error: "Server error", details: error.message });
   }
 };
 
@@ -305,7 +478,11 @@ export const getReportsByUser = async (req, res) => {
     const reports = await HealthReport.find({ userId }).sort({ date: -1 });
     res.json({ success: true, data: reports });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching reports", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching reports",
+      error: error.message,
+    });
   }
 };
 
@@ -314,10 +491,17 @@ export const getReportById = async (req, res) => {
   try {
     const { id } = req.params;
     const report = await HealthReport.findById(id);
-    if (!report) return res.status(404).json({ success: false, message: "Report not found" });
+    if (!report)
+      return res
+        .status(404)
+        .json({ success: false, message: "Report not found" });
     res.json({ success: true, data: report });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching report", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching report",
+      error: error.message,
+    });
   }
 };
 
@@ -326,10 +510,17 @@ export const deleteReport = async (req, res) => {
   try {
     const { id } = req.params;
     const deleted = await HealthReport.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ success: false, message: "Report not found" });
+    if (!deleted)
+      return res
+        .status(404)
+        .json({ success: false, message: "Report not found" });
     res.json({ success: true, message: "Report deleted successfully" });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error deleting report", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error deleting report",
+      error: error.message,
+    });
   }
 };
 
@@ -338,13 +529,18 @@ export const getAverageHealthScore = async (req, res) => {
   try {
     const { userId } = req.params;
     const reports = await HealthReport.find({ userId });
-    if (reports.length === 0) return res.json({ success: true, averageScore: 0 });
+    if (reports.length === 0)
+      return res.json({ success: true, averageScore: 0 });
 
     const total = reports.reduce((sum, r) => sum + (r.healthScore || 0), 0);
     const averageScore = Math.round(total / reports.length);
 
     res.json({ success: true, averageScore });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error calculating average", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error calculating average",
+      error: error.message,
+    });
   }
 };

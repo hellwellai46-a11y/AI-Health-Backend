@@ -1,6 +1,6 @@
-import  express from "express";
-import  dotenv from  "dotenv";
-import  cors from "cors";
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
 import { connectDB } from "./config/db.js";
 
 import weeklyPlannerRoutes from "./routes/weeklyPlannerRoutes.js";
@@ -9,6 +9,7 @@ import authRoutes from "./routes/authRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
 import reminderRoutes from "./routes/reminderRoutes.js";
 import nutritionRoutes from "./routes/nutritionRoutes.js";
+import mlPredictionRoutes from "./routes/mlPredictionRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -17,41 +18,48 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config();
 const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    const allowedOrigins = [
-      process.env.FRONTEND_URL || "http://localhost:5173",
-      process.env.FRONTEND_URL_PROD, // Production frontend URL
-      "http://localhost:3000",
-      "http://localhost:5173"
-    ].filter(Boolean); // Remove undefined values
-    
-    // In production, allow specific origins; in development, allow all localhost
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    if (isDevelopment) {
-      // In development, allow localhost origins
-      if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1') || allowedOrigins.includes(origin)) {
-        callback(null, true);
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      const allowedOrigins = [
+        process.env.FRONTEND_URL || "http://localhost:5173",
+        process.env.FRONTEND_URL_PROD, // Production frontend URL
+        "http://localhost:3000",
+        "http://localhost:5173",
+      ].filter(Boolean); // Remove undefined values
+
+      // In production, allow specific origins; in development, allow all localhost
+      const isDevelopment = process.env.NODE_ENV !== "production";
+
+      if (isDevelopment) {
+        // In development, allow localhost origins
+        if (
+          !origin ||
+          origin.includes("localhost") ||
+          origin.includes("127.0.0.1") ||
+          allowedOrigins.includes(origin)
+        ) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
       } else {
-        callback(new Error('Not allowed by CORS'));
+        // In production, only allow specified origins
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
       }
-    } else {
-      // In production, only allow specified origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 
 // Routes
@@ -61,6 +69,7 @@ app.use("/api/weekly-planner", weeklyPlannerRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/nutrition", nutritionRoutes);
+app.use("/api/ml", mlPredictionRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -72,18 +81,18 @@ const startServer = async () => {
   try {
     // Connect to MongoDB first
     await connectDB();
-    
+
     // Initialize reminder scheduler only after DB connection
     const reminderScheduler = await import("./services/reminderScheduler.js");
     console.log("⏰ Reminder scheduler initialized");
-    
+
     // Start server
     // Render and other platforms set PORT automatically
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
-      if (process.env.NODE_ENV === 'production') {
+      if (process.env.NODE_ENV === "production") {
         console.log(`🌐 Server is ready to accept connections`);
       }
     });

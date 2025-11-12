@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-2.0-flash-exp"; // Using vision-capable model
+const MODEL_ID = "gemini-1.5-flash"; // Stable vision-capable Gemini model
 
 // Configure multer for memory storage (store in memory instead of disk)
 const storage = multer.memoryStorage();
@@ -20,56 +20,122 @@ export const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     // Accept image files only
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith("image/")) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error("Only image files are allowed"), false);
     }
   },
 });
 
 // Helper function to convert image buffer to base64
 function imageToBase64(buffer) {
-  return buffer.toString('base64');
+  return buffer.toString("base64");
 }
 
 // Helper function to extract symptoms/keywords from AI response
 function extractSymptoms(aiResponse) {
   const symptoms = [];
   const lowerResponse = aiResponse.toLowerCase();
-  
+
   // Comprehensive medical keywords dictionary
   const keywordCategories = {
     // Physical symptoms
-    visual: ['rash', 'redness', 'swelling', 'irritation', 'inflammation', 'discoloration', 
-             'patch', 'spot', 'lesion', 'eruption', 'blister', 'bump', 'pimple', 'acne',
-             'hives', 'wheal', 'pustule', 'nodule', 'plaque', 'scale', 'crust'],
-    
+    visual: [
+      "rash",
+      "redness",
+      "swelling",
+      "irritation",
+      "inflammation",
+      "discoloration",
+      "patch",
+      "spot",
+      "lesion",
+      "eruption",
+      "blister",
+      "bump",
+      "pimple",
+      "acne",
+      "hives",
+      "wheal",
+      "pustule",
+      "nodule",
+      "plaque",
+      "scale",
+      "crust",
+    ],
+
     // Sensations
-    sensory: ['itch', 'itchy', 'burning', 'stinging', 'painful', 'tender', 'sore', 
-              'warm', 'hot', 'throbbing'],
-    
+    sensory: [
+      "itch",
+      "itchy",
+      "burning",
+      "stinging",
+      "painful",
+      "tender",
+      "sore",
+      "warm",
+      "hot",
+      "throbbing",
+    ],
+
     // Skin conditions
-    conditions: ['eczema', 'dermatitis', 'psoriasis', 'urticaria', 'folliculitis', 
-                 'cellulitis', 'impetigo', 'ringworm', 'tinea', 'fungal', 'bacterial', 
-                 'viral', 'infection'],
-    
+    conditions: [
+      "eczema",
+      "dermatitis",
+      "psoriasis",
+      "urticaria",
+      "folliculitis",
+      "cellulitis",
+      "impetigo",
+      "ringworm",
+      "tinea",
+      "fungal",
+      "bacterial",
+      "viral",
+      "infection",
+    ],
+
     // Texture/Appearance
-    texture: ['dry', 'peeling', 'scaly', 'rough', 'crusty', 'flaky', 'moist', 'weeping',
-              'oozing', 'bleeding', 'bruised', 'wound', 'cut', 'scab', 'scar'],
-    
+    texture: [
+      "dry",
+      "peeling",
+      "scaly",
+      "rough",
+      "crusty",
+      "flaky",
+      "moist",
+      "weeping",
+      "oozing",
+      "bleeding",
+      "bruised",
+      "wound",
+      "cut",
+      "scab",
+      "scar",
+    ],
+
     // Severity indicators
-    severity: ['mild', 'moderate', 'severe', 'acute', 'chronic', 'localized', 'diffuse',
-               'spreading', 'worsening']
+    severity: [
+      "mild",
+      "moderate",
+      "severe",
+      "acute",
+      "chronic",
+      "localized",
+      "diffuse",
+      "spreading",
+      "worsening",
+    ],
   };
 
   // Flatten all keywords
   const allKeywords = Object.values(keywordCategories).flat();
-  
+
   // Step 1: Extract direct keyword matches (most reliable)
-  allKeywords.forEach(keyword => {
+  allKeywords.forEach((keyword) => {
     // Use word boundary to avoid partial matches (e.g., "rash" in "crash")
-    const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+    const regex = new RegExp(`\\b${keyword}\\b`, "i");
     if (regex.test(aiResponse)) {
       const symptom = keyword.charAt(0).toUpperCase() + keyword.slice(1);
       if (!symptoms.includes(symptom)) {
@@ -82,32 +148,47 @@ function extractSymptoms(aiResponse) {
   const medicalPatterns = [
     // "Possible rash", "Likely irritation", etc.
     /(?:possible|likely|suggestive of|indicates?|shows?|appears to be|consistent with)\s+([a-z\s]+(?:rash|irritation|allergy|infection|condition|dermatitis|eczema|psoriasis))/gi,
-    
+
     // "Redness of the skin", "Swelling around the area"
     /(?:redness|swelling|rash|irritation|inflammation|discoloration)\s+(?:of|in|on|around|at)\s+([a-z\s]+(?:skin|area|region|site))/gi,
-    
+
     // "Signs of X", "Presence of X"
     /(?:signs?|presence|evidence)\s+of\s+([a-z\s]+(?:infection|allergy|inflammation|irritation))/gi,
-    
+
     // Extract condition names
-    /(?:appears to be|consistent with|suggestive of)\s+([a-z]+(?:\s+[a-z]+)?(?:\s+(?:dermatitis|eczema|psoriasis|infection|allergy)))/gi
+    /(?:appears to be|consistent with|suggestive of)\s+([a-z]+(?:\s+[a-z]+)?(?:\s+(?:dermatitis|eczema|psoriasis|infection|allergy)))/gi,
   ];
 
-  medicalPatterns.forEach(pattern => {
+  medicalPatterns.forEach((pattern) => {
     const matches = Array.from(aiResponse.matchAll(pattern));
-    matches.forEach(match => {
+    matches.forEach((match) => {
       if (match[1]) {
         const extracted = match[1]
           .trim()
           .split(/\s+/)
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ');
-        
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+
         // Filter out common stop words
-        const stopWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'with', 'to', 'for'];
-        const words = extracted.split(' ').filter(w => !stopWords.includes(w.toLowerCase()));
-        const cleaned = words.join(' ');
-        
+        const stopWords = [
+          "the",
+          "a",
+          "an",
+          "of",
+          "in",
+          "on",
+          "at",
+          "with",
+          "to",
+          "for",
+        ];
+        const words = extracted
+          .split(" ")
+          .filter((w) => !stopWords.includes(w.toLowerCase()));
+        const cleaned = words.join(" ");
+
         if (cleaned && cleaned.length > 2 && !symptoms.includes(cleaned)) {
           symptoms.push(cleaned);
         }
@@ -116,14 +197,16 @@ function extractSymptoms(aiResponse) {
   });
 
   // Step 3: Extract symptoms from bullet points or list format
-  const listPattern = /[-•*]\s*([a-z\s]+(?:rash|redness|swelling|irritation|itch|pain|sore))/gi;
+  const listPattern =
+    /[-•*]\s*([a-z\s]+(?:rash|redness|swelling|irritation|itch|pain|sore))/gi;
   const listMatches = Array.from(aiResponse.matchAll(listPattern));
-  listMatches.forEach(match => {
+  listMatches.forEach((match) => {
     if (match[1]) {
-      const cleaned = match[1].trim()
+      const cleaned = match[1]
+        .trim()
         .split(/\s+/)
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(' ');
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
       if (cleaned && !symptoms.includes(cleaned)) {
         symptoms.push(cleaned);
       }
@@ -133,25 +216,41 @@ function extractSymptoms(aiResponse) {
   // Step 4: Smart fallback - extract important medical terms
   if (symptoms.length === 0) {
     // Extract capitalized words (often medical terms)
-    const capitalizedWords = aiResponse.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g);
+    const capitalizedWords = aiResponse.match(
+      /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g
+    );
     if (capitalizedWords) {
       const medicalTerms = capitalizedWords
-        .filter(term => term.length > 3 && term.length < 30)
+        .filter((term) => term.length > 3 && term.length < 30)
         .slice(0, 5);
       symptoms.push(...medicalTerms);
     }
-    
+
     // If still nothing, extract first meaningful descriptive words
     if (symptoms.length === 0) {
       const words = aiResponse
         .split(/\s+/)
-        .filter(word => 
-          word.length > 3 && 
-          /^[a-z]+$/i.test(word) &&
-          !['this', 'that', 'with', 'from', 'have', 'been', 'there', 'were'].includes(word.toLowerCase())
+        .filter(
+          (word) =>
+            word.length > 3 &&
+            /^[a-z]+$/i.test(word) &&
+            ![
+              "this",
+              "that",
+              "with",
+              "from",
+              "have",
+              "been",
+              "there",
+              "were",
+            ].includes(word.toLowerCase())
         )
         .slice(0, 5);
-      symptoms.push(...words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()));
+      symptoms.push(
+        ...words.map(
+          (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        )
+      );
     }
   }
 
@@ -159,16 +258,16 @@ function extractSymptoms(aiResponse) {
   const uniqueSymptoms = [...new Set(symptoms)];
   const finalSymptoms = uniqueSymptoms.slice(0, 10);
 
-  return finalSymptoms.length > 0 ? finalSymptoms : ['Skin condition detected'];
+  return finalSymptoms.length > 0 ? finalSymptoms : ["Skin condition detected"];
 }
 
 // Analyze image and extract symptoms
 export const analyzeImage = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No image file provided' 
+      return res.status(400).json({
+        success: false,
+        error: "No image file provided",
       });
     }
 
@@ -210,18 +309,15 @@ Provide a clear, concise medical description. If this appears to be a skin condi
       data: {
         aiDescription: aiText,
         symptoms: extractedSymptoms,
-        symptomsText: extractedSymptoms.join(', ')
-      }
+        symptomsText: extractedSymptoms.join(", "),
+      },
     });
-
   } catch (error) {
-    console.error('Image analysis error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: 'Failed to analyze image',
-      details: error.message 
+    console.error("Image analysis error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to analyze image",
+      details: error.message,
     });
   }
 };
-
-

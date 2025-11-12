@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-1.5-flash"; // Stable vision-capable Gemini model
+const MODEL_ID = "gemini-2.0-flash";
 
 // Configure multer for memory storage (store in memory instead of disk)
 const storage = multer.memoryStorage();

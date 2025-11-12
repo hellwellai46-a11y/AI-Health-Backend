@@ -93,6 +93,7 @@ IMPORTANT: All array fields must contain at least 2-3 items. Do not leave any fi
 For NutritionalDeficiencies, analyze what vitamins or minerals might be lacking.
 For RecommendedMedicines, include general recommendations and note to consult a doctor.
 For ExerciseRecommendations, provide specific exercise suggestions.
+
 ${dietNote}
 For FoodsToEat: ${
     dietPreference === "vegetarian"
@@ -354,6 +355,32 @@ export const generateAnalysisController = async (req, res) => {
         error: "Failed to generate analysis. Please try again in a moment.",
         details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}`,
       });
+    }
+
+    // Post-process validation: Filter non-vegetarian items if user is vegetarian
+    const currentDietPreference = dietPreference || 'non-vegetarian';
+    const isVegetarian = currentDietPreference === 'vegetarian';
+    
+    if (isVegetarian && parsed) {
+      // Filter FoodsToEat array
+      if (parsed.FoodsToEat && Array.isArray(parsed.FoodsToEat)) {
+        const originalLength = parsed.FoodsToEat.length;
+        parsed.FoodsToEat = filterVegetarianItems(parsed.FoodsToEat, true);
+        if (parsed.FoodsToEat.length < originalLength) {
+          console.warn(`Filtered out ${originalLength - parsed.FoodsToEat.length} non-vegetarian items from FoodsToEat`);
+        }
+      }
+      
+      // Filter weeklyPlanner diet plans
+      if (parsed.weeklyPlanner && Array.isArray(parsed.weeklyPlanner)) {
+        parsed.weeklyPlanner = parsed.weeklyPlanner.map(day => {
+          if (day.dietPlan) {
+            day.dietPlan = filterVegetarianDietPlan(day.dietPlan, true);
+          }
+          return day;
+        });
+        console.log('Filtered non-vegetarian items from weekly planner diet plans');
+      }
     }
 
     // Persist report if requested

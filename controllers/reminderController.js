@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import "dotenv/config";
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-1.5-flash"; // Stable Gemini model
+const MODEL_ID = "gemini-2.0-flash";
 
 // Generate AI-suggested optimal time for reminders
 async function suggestOptimalTime(userId, reminderType, userActivity = {}) {

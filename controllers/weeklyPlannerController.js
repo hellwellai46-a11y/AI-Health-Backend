@@ -6,60 +6,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import "dotenv/config";
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-1.5-flash"; // Stable Gemini model
+const MODEL_ID = "gemini-2.0-flash";
 
 // Helper function to delay execution
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Helper function to check if a food item contains non-vegetarian ingredients
-const containsNonVegetarian = (foodItem) => {
-  if (!foodItem || typeof foodItem !== 'string') return false;
-  
-  const lowerFood = foodItem.toLowerCase();
-  
-  // List of non-vegetarian keywords
-  const nonVegKeywords = [
-    'chicken', 'beef', 'pork', 'lamb', 'mutton', 'goat', 'turkey', 'duck', 'quail',
-    'fish', 'salmon', 'tuna', 'cod', 'sardine', 'mackerel', 'prawn', 'shrimp', 'crab',
-    'lobster', 'seafood', 'meat', 'poultry', 'bacon', 'ham', 'sausage', 'pepperoni',
-    'gelatin', 'fish sauce', 'oyster sauce', 'anchovy', 'squid', 'octopus', 'mussel',
-    'clam', 'scallop', 'caviar', 'roe', 'stock', 'broth', 'bone broth', 'animal flesh'
-  ];
-  
-  return nonVegKeywords.some(keyword => lowerFood.includes(keyword));
-};
-
-// Helper function to filter non-vegetarian items from arrays
-const filterVegetarianItems = (items, isVegetarian) => {
-  if (!isVegetarian || !Array.isArray(items)) return items;
-  
-  return items.filter(item => {
-    if (typeof item === 'string') {
-      return !containsNonVegetarian(item);
-    }
-    return true;
-  });
-};
-
-// Helper function to filter non-vegetarian items from diet plan
-const filterVegetarianDietPlan = (dietPlan, isVegetarian) => {
-  if (!isVegetarian || !dietPlan || typeof dietPlan !== 'object') return dietPlan;
-  
-  const filtered = {};
-  for (const [key, value] of Object.entries(dietPlan)) {
-    if (typeof value === 'string') {
-      if (!containsNonVegetarian(value)) {
-        filtered[key] = value;
-      } else {
-        // Replace with a vegetarian alternative message
-        filtered[key] = 'Vegetarian meal (please specify based on your preferences)';
-      }
-    } else {
-      filtered[key] = value;
-    }
-  }
-  return filtered;
-};
 
 function buildCombinedPrompt({ symptomsText, type, context, dietPreference }) {
   const dietNote = dietPreference
@@ -340,32 +290,6 @@ export const generateAnalysisController = async (req, res) => {
         error: "Failed to generate analysis. Please try again in a moment.",
         details: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}`,
       });
-    }
-
-    // Post-process validation: Filter non-vegetarian items if user is vegetarian
-    const currentDietPreference = dietPreference || 'non-vegetarian';
-    const isVegetarian = currentDietPreference === 'vegetarian';
-    
-    if (isVegetarian && parsed) {
-      // Filter foodsToEat array in report
-      if (parsed.report && parsed.report.foodsToEat && Array.isArray(parsed.report.foodsToEat)) {
-        const originalLength = parsed.report.foodsToEat.length;
-        parsed.report.foodsToEat = filterVegetarianItems(parsed.report.foodsToEat, true);
-        if (parsed.report.foodsToEat.length < originalLength) {
-          console.warn(`Filtered out ${originalLength - parsed.report.foodsToEat.length} non-vegetarian items from foodsToEat`);
-        }
-      }
-      
-      // Filter weeklyPlanner diet plans
-      if (parsed.weeklyPlanner && Array.isArray(parsed.weeklyPlanner)) {
-        parsed.weeklyPlanner = parsed.weeklyPlanner.map(day => {
-          if (day.dietPlan) {
-            day.dietPlan = filterVegetarianDietPlan(day.dietPlan, true);
-          }
-          return day;
-        });
-        console.log('Filtered non-vegetarian items from weekly planner diet plans');
-      }
     }
 
     // Persist report if requested

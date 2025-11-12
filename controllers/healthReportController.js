@@ -11,7 +11,7 @@ import {
 import "dotenv/config";
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_ID = "gemini-1.5-flash"; // Stable Gemini model
+const MODEL_ID = "gemini-2.0-flash";
 const ML_API_URL = process.env.ML_API_URL || "http://localhost:8000";
 
 // Helper function to delay execution
@@ -93,7 +93,6 @@ IMPORTANT: All array fields must contain at least 2-3 items. Do not leave any fi
 For NutritionalDeficiencies, analyze what vitamins or minerals might be lacking.
 For RecommendedMedicines, include general recommendations and note to consult a doctor.
 For ExerciseRecommendations, provide specific exercise suggestions.
-
 ${dietNote}
 For FoodsToEat: ${
     dietPreference === "vegetarian"
@@ -160,7 +159,20 @@ Context (may help personalize): ${context}
   Return JSON only — no markdown, no explanations, no code blocks
   `;
 
-  return [header, reportPrompt, plannerPrompt, footer].join("\n\n");
+  // Build prompt based on type requested
+  const parts = [header];
+
+  if (wantText === "report" || wantText === "both") {
+    parts.push(reportPrompt);
+  }
+
+  if (wantText === "planner" || wantText === "both") {
+    parts.push(plannerPrompt);
+  }
+
+  parts.push(footer);
+
+  return parts.join("\n\n");
 }
 
 export const generateAnalysisController = async (req, res) => {
@@ -357,32 +369,6 @@ export const generateAnalysisController = async (req, res) => {
       });
     }
 
-    // Post-process validation: Filter non-vegetarian items if user is vegetarian
-    const currentDietPreference = dietPreference || 'non-vegetarian';
-    const isVegetarian = currentDietPreference === 'vegetarian';
-    
-    if (isVegetarian && parsed) {
-      // Filter FoodsToEat array
-      if (parsed.FoodsToEat && Array.isArray(parsed.FoodsToEat)) {
-        const originalLength = parsed.FoodsToEat.length;
-        parsed.FoodsToEat = filterVegetarianItems(parsed.FoodsToEat, true);
-        if (parsed.FoodsToEat.length < originalLength) {
-          console.warn(`Filtered out ${originalLength - parsed.FoodsToEat.length} non-vegetarian items from FoodsToEat`);
-        }
-      }
-      
-      // Filter weeklyPlanner diet plans
-      if (parsed.weeklyPlanner && Array.isArray(parsed.weeklyPlanner)) {
-        parsed.weeklyPlanner = parsed.weeklyPlanner.map(day => {
-          if (day.dietPlan) {
-            day.dietPlan = filterVegetarianDietPlan(day.dietPlan, true);
-          }
-          return day;
-        });
-        console.log('Filtered non-vegetarian items from weekly planner diet plans');
-      }
-    }
-
     // Persist report if requested
     const result = {};
     console.log("Parsed output keys:", Object.keys(parsed));
@@ -451,32 +437,45 @@ export const generateAnalysisController = async (req, res) => {
     }
 
     // Persist planner if requested
-    if (wantPlanner && Array.isArray(parsed.weeklyPlanner)) {
-      const days = parsed.weeklyPlanner.map((d, idx) => ({
-        day: d.day || `Day ${idx + 1}`,
-        date: d.date ? new Date(d.date) : new Date(Date.now() + idx * 86400000),
-        dietPlan: d.dietPlan || {},
-        exercises: Array.isArray(d.exercises) ? d.exercises : [],
-        medicines: Array.isArray(d.medicines) ? d.medicines : [],
-        progress: typeof d.progress === "number" ? d.progress : 0,
-        focusNote: d.focusNote || "",
-      }));
+    if (wantPlanner) {
+      // Handle both cases: parsed.weeklyPlanner (object response) or parsed directly (array response)
+      let weeklyPlannerArray = null;
 
-      const weekStart = new Date();
-      const weekEnd = new Date(Date.now() + (days.length - 1) * 86400000);
-
-      const savedPlanner = await WeeklyPlanner.create({
-        user: user ? user._id : null,
-        weekStart,
-        weekEnd,
-        days,
-      });
-
-      if (user) {
-        user.dietPlans.push(savedPlanner._id);
-        await user.save();
+      if (Array.isArray(parsed.weeklyPlanner)) {
+        weeklyPlannerArray = parsed.weeklyPlanner;
+      } else if (Array.isArray(parsed)) {
+        weeklyPlannerArray = parsed;
       }
-      result.weeklyPlanner = savedPlanner;
+
+      if (weeklyPlannerArray && weeklyPlannerArray.length > 0) {
+        const days = weeklyPlannerArray.map((d, idx) => ({
+          day: d.day || `Day ${idx + 1}`,
+          date: d.date
+            ? new Date(d.date)
+            : new Date(Date.now() + idx * 86400000),
+          dietPlan: d.dietPlan || {},
+          exercises: Array.isArray(d.exercises) ? d.exercises : [],
+          medicines: Array.isArray(d.medicines) ? d.medicines : [],
+          progress: typeof d.progress === "number" ? d.progress : 0,
+          focusNote: d.focusNote || "",
+        }));
+
+        const weekStart = new Date();
+        const weekEnd = new Date(Date.now() + (days.length - 1) * 86400000);
+
+        const savedPlanner = await WeeklyPlanner.create({
+          user: user ? user._id : null,
+          weekStart,
+          weekEnd,
+          days,
+        });
+
+        if (user) {
+          user.dietPlans.push(savedPlanner._id);
+          await user.save();
+        }
+        result.weeklyPlanner = savedPlanner;
+      }
     }
 
     return res.status(200).json({

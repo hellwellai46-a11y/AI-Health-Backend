@@ -67,9 +67,10 @@ for (const { name, description } of requiredVars) {
     console.warn(`   Please update with actual ${description}`);
     hasWarnings = true;
   } else {
+    // Mask all values consistently to avoid exposing sensitive data
     const maskedValue = value.length > 20 
-      ? `${value.substring(0, 10)}...${value.substring(value.length - 4)}`
-      : `${value.substring(0, 4)}...`;
+      ? `${value.substring(0, 4)}...${value.substring(value.length - 3)}`
+      : '****';
     console.log(`✅ ${name}: ${maskedValue}`);
   }
 }
@@ -88,9 +89,10 @@ for (const { name, description, default: defaultValue } of optionalVars) {
     console.warn(`⚠️  ${name}: Using placeholder value`);
     hasWarnings = true;
   } else {
+    // Mask all values consistently to avoid exposing sensitive data
     const maskedValue = value.length > 20 
-      ? `${value.substring(0, 10)}...`
-      : value;
+      ? `${value.substring(0, 4)}...${value.substring(value.length - 3)}`
+      : '****';
     console.log(`✅ ${name}: ${maskedValue}`);
   }
 }

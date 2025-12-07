@@ -192,5 +192,4 @@ For additional help, open an issue in the repository.
 
 ---
 
-**Created:** December 2025  
-**PR Branch:** `copilot/remove-committed-env-file-1696524000`
+**Created:** December 2025

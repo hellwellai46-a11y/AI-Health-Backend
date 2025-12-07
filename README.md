@@ -2,6 +2,8 @@
 
 A secure, fast, and intelligent Node.js backend powering AI-generated health assessments, reports, weekly diet plans, user management, and dashboard analytics.
 
+> **🔐 Security Notice**: A `.env` file with sensitive credentials was previously committed to this repository (now removed from working tree but exists in git history). All API keys and credentials from that commit should be considered compromised and rotated. See [ENV_SETUP.md](./ENV_SETUP.md) for details.
+
 ---
 
 ## ⚙️ Tech Stack
@@ -49,13 +51,33 @@ cd HealWell_Backend_code
 npm install
 ```
 
-### 3️⃣ Create `.env` file
+### 3️⃣ Set Up Environment Variables
 
+**⚠️ Important**: Never commit your `.env` file to version control!
+
+Copy the example file and configure it with your credentials:
+
+```bash
+cp .env.example .env
 ```
-PORT=5000
-MONGO_URI=your_mongodb_url
-JWT_SECRET=your_secret
-AI_API_KEY=your_ai_key
+
+Then edit `.env` with your actual values. See [ENV_SETUP.md](./ENV_SETUP.md) for detailed setup instructions.
+
+**Required variables:**
+- `MONGO_URI` - MongoDB connection string
+- `GEMINI_API_KEY` - Google Gemini API key for AI features
+- `JWT_SECRET` - Secret for JWT token signing
+
+**Optional variables:**
+- `SMTP_*` - Email configuration (for reminders)
+- `YOUTUBE_API_KEY` - For video recommendations
+- `ML_API_URL` - ML service endpoint
+
+Quick example:
+```env
+MONGO_URI=mongodb://localhost:27017/healwell-db
+GEMINI_API_KEY=your-api-key-here
+JWT_SECRET=your-secret-here
 ```
 
 ### 4️⃣ Start Server

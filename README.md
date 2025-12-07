@@ -80,6 +80,11 @@ Then edit `.env` with your actual credentials. See **[ENV_SETUP.md](./ENV_SETUP.
 - `SMTP_*` - Email service configuration (see [EMAIL_SETUP.md](./EMAIL_SETUP.md))
 - `YOUTUBE_API_KEY` - For video recommendations (see [YOUTUBE_API_SETUP.md](./YOUTUBE_API_SETUP.md))
 
+**Verify your configuration:**
+```bash
+npm run verify-env
+```
+
 ### 4️⃣ Start Server
 
 ```bash

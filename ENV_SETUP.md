@@ -147,16 +147,22 @@ FRONTEND_URL_PROD=https://your-domain.com
 
 After setting up your `.env` file:
 
-1. **Test database connection:**
+1. **Verify environment configuration:**
+   ```bash
+   npm run verify-env
+   ```
+   This will check if all required variables are set and warn about placeholder values.
+
+2. **Test database connection:**
    ```bash
    npm run dev
    ```
    You should see: `✅ MongoDB Connected`
 
-2. **Verify environment variables are loaded:**
+3. **Verify environment variables are loaded:**
    Check the console output for any missing required variables
 
-3. **Test API endpoints:**
+4. **Test API endpoints:**
    Try accessing `http://localhost:5000` (or your configured PORT)
 
 ## 🔒 Security Best Practices

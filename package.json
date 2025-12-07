@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "verify-env": "node verify-env.js"
   },
   "keywords": [],
   "author": "",

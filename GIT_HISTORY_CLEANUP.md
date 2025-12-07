@@ -23,7 +23,7 @@ This guide explains how to remove the `.env` file from the entire git history of
 
 ```bash
 # Clone with full history (not shallow)
-git clone https://github.com/hellwellai46-a11y/AI-Health-Backend.git
+git clone <repository-url>
 cd AI-Health-Backend
 ```
 
@@ -81,7 +81,7 @@ Send this message to all team members:
 > rm -rf AI-Health-Backend
 > 
 > # Clone fresh copy
-> git clone https://github.com/hellwellai46-a11y/AI-Health-Backend.git
+> git clone <repository-url>
 > cd AI-Health-Backend
 > ```
 >
@@ -96,7 +96,7 @@ BFG is faster for large repositories:
 wget https://repo1.maven.org/maven2/com/madgag/bfg/1.14.0/bfg-1.14.0.jar
 
 # Create a clone
-git clone --mirror https://github.com/hellwellai46-a11y/AI-Health-Backend.git
+git clone --mirror <repository-url>
 cd AI-Health-Backend.git
 
 # Remove .env file

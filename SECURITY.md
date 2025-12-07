@@ -3,22 +3,22 @@
 ## ⚠️ Critical Security Incident - Exposed Secrets
 
 ### Issue
-A `.env` file containing active secrets was accidentally committed to the repository git history in commit `7bab73e79036d1e7fe553ff6196c2c87ed88cb5a` on November 1, 2025. This file contained:
+A `.env` file containing active secrets was accidentally committed to the repository git history on November 1, 2025. This file contained:
 
-- Google Gemini API Key
+- Google Gemini API Key (starts with `AIzaSyB***`)
 - MongoDB connection string with embedded credentials
 - SMTP credentials (Gmail app password)
 
-While the file was removed from the repository in a subsequent commit (`04aa1dc17d8c555f27e76f3ab2584e7539a54e87`), it remains in the git history and can be accessed by anyone who clones the repository.
+While the file was removed from the repository in a subsequent commit, it remains in the git history and can be accessed by anyone who clones the repository.
 
 ### Required Actions
 
 **IMMEDIATELY:**
 
 1. ✅ **Rotate/Revoke All Exposed Credentials**
-   - ❗ Revoke the Google Gemini API key: `AIzaSyB6An8OkwyDTZ5jOFUg-1_aOeMEiFl-uX4`
-   - ❗ Change MongoDB password for user: `devanshbansal25072004`
-   - ❗ Revoke Gmail app password: `mcedwwii xxkm ukrl`
+   - ❗ Revoke the exposed Google Gemini API key
+   - ❗ Change MongoDB password for the exposed user account
+   - ❗ Revoke the exposed Gmail app password
    - ❗ Generate new credentials and update them in your local `.env` file
 
 2. ✅ **Audit Access**

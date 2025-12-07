@@ -7,12 +7,12 @@ This PR addresses the critical security issue of a `.env` file containing active
 ## What Was Done
 
 ### 1. Investigation ✅
-- Located the `.env` file in commit `7bab73e79036d1e7fe553ff6196c2c87ed88cb5a` (November 1, 2025)
+- Located the `.env` file in git history (committed November 1, 2025)
 - Confirmed it contains active secrets:
-  - Google Gemini API Key: `AIzaSyB6An8OkwyDTZ5jOFUg-1_aOeMEiFl-uX4`
-  - MongoDB credentials: `mongodb+srv://devanshbansal25072004:devansh123@backened.mgk9t.mongodb.net/...`
-  - SMTP credentials: `mcedwwii xxkm ukrl`
-- Verified the file was removed in commit `04aa1dc17d8c555f27e76f3ab2584e7539a54e87`
+  - Google Gemini API Key: `AIzaSyB***[REDACTED]`
+  - MongoDB credentials with embedded username/password
+  - SMTP credentials (Gmail app password)
+- Verified the file was later removed but still exists in git history
 - Confirmed `.gitignore` properly excludes `.env` files
 
 ### 2. Documentation Created ✅
@@ -35,18 +35,18 @@ This PR addresses the critical security issue of a `.env` file containing active
 
 1. **Google Gemini API Key**
    - Go to: https://makersuite.google.com/app/apikey
-   - Revoke key: `AIzaSyB6An8OkwyDTZ5jOFUg-1_aOeMEiFl-uX4`
+   - Revoke the exposed key (starts with `AIzaSyB***`)
    - Generate new key
    - Update in your local `.env` file
 
 2. **MongoDB Credentials**
    - Log into MongoDB Atlas
-   - Change password for user: `devanshbansal25072004`
+   - Change password for the exposed user account
    - Update connection string in your local `.env` file
 
 3. **SMTP/Gmail App Password**
    - Go to: https://myaccount.google.com/apppasswords
-   - Revoke password: `mcedwwii xxkm ukrl`
+   - Revoke the exposed app password
    - Generate new app password
    - Update in your local `.env` file
 
@@ -75,7 +75,7 @@ After cleaning git history, all team members must:
 rm -rf AI-Health-Backend
 
 # Re-clone fresh copy
-git clone https://github.com/hellwellai46-a11y/AI-Health-Backend.git
+git clone <repository-url>
 ```
 
 ## Prevention Measures Implemented

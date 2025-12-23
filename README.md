@@ -51,12 +51,28 @@ npm install
 
 ### 3️⃣ Create `.env` file
 
+⚠️ **IMPORTANT:** See [SECURITY.md](./SECURITY.md) for critical security information about exposed secrets.
+
+Copy the example environment file and configure with your credentials:
+
+```bash
+cp .env.example .env
 ```
+
+Then edit `.env` with your actual values:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+MONGO_URI=your_mongodb_connection_string_here
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password_here
 PORT=5000
-MONGO_URI=your_mongodb_url
-JWT_SECRET=your_secret
-AI_API_KEY=your_ai_key
 ```
+
+**Never commit your `.env` file to version control!** It's already listed in `.gitignore`.
 
 ### 4️⃣ Start Server
 

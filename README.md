@@ -2,6 +2,18 @@
 
 A secure, fast, and intelligent Node.js backend powering AI-generated health assessments, reports, weekly diet plans, user management, and dashboard analytics.
 
+## ⚠️ Security Notice
+
+**Important:** A `.env` file containing sensitive credentials was previously committed to this repository's git history. While it has been removed from tracking, the exposed credentials remain accessible in git history and should be considered compromised. 
+
+**If you previously used credentials from this repository:**
+- ✅ Rotate all API keys (Gemini, YouTube)
+- ✅ Change MongoDB passwords
+- ✅ Generate new email app passwords
+- ✅ See [ENV_SETUP.md](./ENV_SETUP.md) for details
+
+**For new users:** Follow [ENV_SETUP.md](./ENV_SETUP.md) to properly configure your environment with new, secure credentials.
+
 ---
 
 ## ⚙️ Tech Stack
@@ -49,13 +61,28 @@ cd HealWell_Backend_code
 npm install
 ```
 
-### 3️⃣ Create `.env` file
+### 3️⃣ Configure Environment Variables
 
+Create a `.env` file in the root directory:
+
+```bash
+cp .env.example .env
 ```
-PORT=5000
-MONGO_URI=your_mongodb_url
-JWT_SECRET=your_secret
-AI_API_KEY=your_ai_key
+
+Then edit `.env` with your actual credentials. See **[ENV_SETUP.md](./ENV_SETUP.md)** for detailed setup instructions.
+
+**Required variables:**
+- `MONGO_URI` - MongoDB connection string
+- `GEMINI_API_KEY` - Google Gemini API key
+- `JWT_SECRET` - Secret for JWT token signing
+
+**Optional variables:**
+- `SMTP_*` - Email service configuration (see [EMAIL_SETUP.md](./EMAIL_SETUP.md))
+- `YOUTUBE_API_KEY` - For video recommendations (see [YOUTUBE_API_SETUP.md](./YOUTUBE_API_SETUP.md))
+
+**Verify your configuration:**
+```bash
+npm run verify-env
 ```
 
 ### 4️⃣ Start Server
